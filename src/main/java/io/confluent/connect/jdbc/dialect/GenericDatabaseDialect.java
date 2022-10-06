@@ -232,6 +232,7 @@ public class GenericDatabaseDialect implements DatabaseDialect {
 
   @Override
   public Connection getConnection() throws SQLException {
+    glog.info("getConnection start. jdbcUrl={}",jdbcUrl);
     // These config names are the same for both source and sink configs ...
     String username = config.getString(JdbcSourceConnectorConfig.CONNECTION_USER_CONFIG);
     Password dbPassword = config.getPassword(JdbcSourceConnectorConfig.CONNECTION_PASSWORD_CONFIG);
@@ -243,6 +244,7 @@ public class GenericDatabaseDialect implements DatabaseDialect {
       properties.setProperty("password", dbPassword.value());
     }
     properties = addConnectionProperties(properties);
+    glog.info("getConnection username={} properties={}",username, properties);
     // Timeout is 40 seconds to be as long as possible for customer to have a long connection
     // handshake, while still giving enough time to validate once in the follower worker,
     // and again in the leader worker and still be under 90s REST serving timeout
@@ -252,6 +254,7 @@ public class GenericDatabaseDialect implements DatabaseDialect {
       jdbcDriverInfo = createJdbcDriverInfo(connection);
     }
     connections.add(connection);
+    glog.info("getConnection end. connection={}",connection);
     return connection;
   }
 
@@ -307,18 +310,34 @@ public class GenericDatabaseDialect implements DatabaseDialect {
   }
 
   protected JdbcDriverInfo jdbcDriverInfo() {
+    glog.info("jdbcDriverInfo start. jdbcDriverInfo={}",jdbcDriverInfo);
     if (jdbcDriverInfo == null) {
       try (Connection connection = getConnection()) {
         jdbcDriverInfo = createJdbcDriverInfo(connection);
+        glog.info("jdbcDriverInfo jdbcDriverInfo={}",jdbcDriverInfo);
       } catch (SQLException e) {
+        glog.error("jdbcDriverInfo error={}",e.getMessage());
         throw new ConnectException("Unable to get JDBC driver information", e);
+      } finally {
+        glog.info("jdbcDriverInfo end.");
       }
     }
     return jdbcDriverInfo;
   }
 
   protected JdbcDriverInfo createJdbcDriverInfo(Connection connection) throws SQLException {
+    glog.info("createJdbcDriverInfo start");
     DatabaseMetaData metadata = connection.getMetaData();
+    glog.info("createJdbcDriverInfo MajorVersion={}",
+            metadata.getJDBCMajorVersion());
+    glog.info("createJdbcDriverInfo MinorVersion={}",
+            metadata.getJDBCMinorVersion());
+    glog.info("createJdbcDriverInfo DriverName={}",
+            metadata.getDriverName());
+    glog.info("createJdbcDriverInfo DBProductName={}",
+            metadata.getDatabaseProductName());
+    glog.info("createJdbcDriverInfo DBProductVersion={}",
+            metadata.getDatabaseProductVersion());
     return new JdbcDriverInfo(
         metadata.getJDBCMajorVersion(),
         metadata.getJDBCMinorVersion(),
@@ -580,6 +599,7 @@ public class GenericDatabaseDialect implements DatabaseDialect {
       Connection connection,
       TableId tableId
   ) throws SQLException {
+    glog.info("-->tableExists start");
     DatabaseMetaData metadata = connection.getMetaData();
     String[] tableTypes = tableTypes(metadata, this.tableTypes);
     String tableTypeDisplay = displayableTableTypes(tableTypes, "/");
@@ -598,6 +618,7 @@ public class GenericDatabaseDialect implements DatabaseDialect {
           tableId,
           exists ? "present" : "absent"
       );
+      glog.info("-->tableExists end");
       return exists;
     }
   }
@@ -651,8 +672,21 @@ public class GenericDatabaseDialect implements DatabaseDialect {
       String tablePattern,
       String columnPattern
   ) throws SQLException {
-    glog.debug(
-        "Querying {} dialect column metadata for catalog:{} schema:{} table:{}",
+    glog.info("-->describeColumns start");
+    glog.info("-->describeColumns connection={}",connection);
+    glog.info("-->describeColumns connection.getTypeInfo={}",
+            connection.getMetaData().getTypeInfo());
+    glog.info("-->describeColumns connection.getURL={}",
+            connection.getMetaData().getURL());
+    glog.info("-->describeColumns connection.getIdentifierQuoteString={}",
+            connection.getMetaData().getIdentifierQuoteString());
+    glog.info("-->describeColumns connection.getClientInfoProperties={}",
+            connection.getMetaData().getClientInfoProperties());
+    glog.info("-->describeColumns catalogPattern={}",catalogPattern);
+    glog.info("-->describeColumns schemaPattern={}",schemaPattern);
+    glog.info("-->describeColumns tablePattern={}",tablePattern);
+    glog.info("-->describeColumns columnPattern={}",columnPattern);
+    glog.info("-->Querying {} dialect column metadata for catalog:{} schema:{} table:{}",
         this,
         catalogPattern,
         schemaPattern,
@@ -660,6 +694,7 @@ public class GenericDatabaseDialect implements DatabaseDialect {
     );
 
     // Get the primary keys of the table(s) ...
+    glog.info("-->describeColumns calling primaryKeyColumns");
     final Set<ColumnId> pkColumns = primaryKeyColumns(
         connection,
         catalogPattern,
@@ -667,14 +702,22 @@ public class GenericDatabaseDialect implements DatabaseDialect {
         tablePattern
     );
     Map<ColumnId, ColumnDefinition> results = new HashMap<>();
+    glog.info("-->describeColumns connection.getMetaData().getColumns");
     try (ResultSet rs = connection.getMetaData().getColumns(
         catalogPattern,
         schemaPattern,
         tablePattern,
         columnPattern
     )) {
-      final int rsColumnCount = rs.getMetaData().getColumnCount();
+      glog.info("-->describeColumns connection.getMetaData().getColumns success");
+      glog.info("-->before while loop rs={}",rs);
+
+      final int rsColumnCount = rs.getMetaData().getColumnCount();;
+      glog.info("--->rsColumnCount={}",rsColumnCount);
+
       while (rs.next()) {
+        glog.info("--->describeColumns reading rs");
+
         final String catalogName = rs.getString(1);
         final String schemaName = rs.getString(2);
         final String tableName = rs.getString(3);
@@ -701,14 +744,18 @@ public class GenericDatabaseDialect implements DatabaseDialect {
             break;
         }
         Boolean autoIncremented = null;
+
         if (rsColumnCount >= 23) {
           // Not all drivers include all columns ...
+          glog.info("-->rsColumnCount>=23. Not all drivers include all columns");
           String isAutoIncremented = rs.getString(23);
           if ("yes".equalsIgnoreCase(isAutoIncremented)) {
             autoIncremented = Boolean.TRUE;
           } else if ("no".equalsIgnoreCase(isAutoIncremented)) {
             autoIncremented = Boolean.FALSE;
           }
+          glog.info("-->rsColumnCount>=23. autoIncremented={}",
+                  autoIncremented);
         }
         Boolean signed = null;
         Boolean caseSensitive = null;
@@ -721,25 +768,33 @@ public class GenericDatabaseDialect implements DatabaseDialect {
           nullability = Nullability.NOT_NULL;
         }
         ColumnDefinition defn = columnDefinition(
-            rs,
-            columnId,
-            jdbcType,
-            typeName,
-            typeClassName,
-            nullability,
-            Mutability.UNKNOWN,
-            precision,
-            scale,
-            signed,
-            displaySize,
-            autoIncremented,
-            caseSensitive,
-            searchable,
-            currency,
-            isPrimaryKey
+                rs,
+                columnId,
+                jdbcType,
+                typeName,
+                typeClassName,
+                nullability,
+                Mutability.UNKNOWN,
+                precision,
+                scale,
+                signed,
+                displaySize,
+                autoIncremented,
+                caseSensitive,
+                searchable,
+                currency,
+                isPrimaryKey
         );
+        glog.info("--->describeColumns results add columnId={}, defn={}",
+                columnId,
+                defn);
+
         results.put(columnId, defn);
       }
+
+      glog.info("-->describeColumns results.size={}",
+              results.size());
+      glog.info("-->describeColumns end");
       return results;
     }
   }
@@ -747,11 +802,13 @@ public class GenericDatabaseDialect implements DatabaseDialect {
   @Override
   public Map<ColumnId, ColumnDefinition> describeColumns(ResultSetMetaData rsMetadata) throws
       SQLException {
+    log.info("-->describeColumns start");
     Map<ColumnId, ColumnDefinition> result = new LinkedHashMap<>();
     for (int i = 1; i <= rsMetadata.getColumnCount(); ++i) {
       ColumnDefinition defn = describeColumn(rsMetadata, i);
       result.put(defn.id(), defn);
     }
+    log.info("-->describeColumns end");
     return result;
   }
 
@@ -821,6 +878,7 @@ public class GenericDatabaseDialect implements DatabaseDialect {
       String tablePattern
   ) throws SQLException {
 
+    log.info("-->primaryKeyColumns start... connection.getMetaData().getPrimaryKeys");
     // Get the primary keys of the table(s) ...
     final Set<ColumnId> pkColumns = new HashSet<>();
     try (ResultSet rs = connection.getMetaData().getPrimaryKeys(
@@ -835,6 +893,7 @@ public class GenericDatabaseDialect implements DatabaseDialect {
         pkColumns.add(columnId);
       }
     }
+    log.info("-->primaryKeyColumns end");
     return pkColumns;
   }
 
@@ -843,9 +902,14 @@ public class GenericDatabaseDialect implements DatabaseDialect {
       Connection db,
       TableId tableId
   ) throws SQLException {
+    log.info("-->describeColumnsByQuerying");
     String queryStr = "SELECT * FROM {} LIMIT 1";
+    log.info("-->describeColumnsByQuerying queryStr={}",queryStr);
     String quotedName = expressionBuilder().append(tableId).toString();
+    log.info("-->describeColumnsByQuerying quotedName={}",quotedName);
+    log.info("-->describeColumnsByQuerying PreparedStatement");
     try (PreparedStatement stmt = db.prepareStatement(queryStr)) {
+      log.info("-->describeColumnsByQuerying PreparedStatement success");
       stmt.setString(1, quotedName);
       try (ResultSet rs = stmt.executeQuery()) {
         ResultSetMetaData rsmd = rs.getMetaData();
@@ -859,14 +923,24 @@ public class GenericDatabaseDialect implements DatabaseDialect {
       Connection connection,
       TableId tableId
   ) throws SQLException {
+    glog.info("-->describeTable start");
+    glog.info("-->describeTable calling describeColumns");
     Map<ColumnId, ColumnDefinition> columnDefns = describeColumns(connection, tableId.catalogName(),
                                                                   tableId.schemaName(),
                                                                   tableId.tableName(), null
     );
-    if (columnDefns.isEmpty()) {
+    glog.info("-->describeTable columnDefns={}",columnDefns);
+
+    if (null == columnDefns || columnDefns.isEmpty()) {
+      glog.info("describeTable end. columnDefns isEmpty or null");
       return null;
     }
+
+    glog.info("-->describeTable columnDefns.size={}",columnDefns.size());
+
+    glog.info("-->describeTable calling tableTypeFor");
     TableType tableType = tableTypeFor(connection, tableId);
+    glog.info("describeTable creating TableDefinition. tableType={}",tableType);
     return new TableDefinition(tableId, columnDefns.values(), tableType);
   }
 
@@ -874,6 +948,7 @@ public class GenericDatabaseDialect implements DatabaseDialect {
       Connection connection,
       TableId tableId
   ) throws SQLException {
+    glog.info("-->tableTypeFor start");
     DatabaseMetaData metadata = connection.getMetaData();
     String[] tableTypes = tableTypes(metadata, this.tableTypes);
     String tableTypeDisplay = displayableTableTypes(tableTypes, "/");
@@ -909,6 +984,7 @@ public class GenericDatabaseDialect implements DatabaseDialect {
         tableTypeDisplay,
         tableId
     );
+    glog.info("-->tableTypeFor end");
     return TableType.TABLE;
   }
 
@@ -1031,7 +1107,7 @@ public class GenericDatabaseDialect implements DatabaseDialect {
     int scale = columnDefn.scale();
     switch (sqlType) {
       case Types.NULL: {
-        glog.debug("JDBC type 'NULL' not currently supported for column '{}'", fieldName);
+        log.info("-->JDBC type 'NULL' not currently supported for column '{}'", fieldName);
         return null;
       }
 
@@ -1097,13 +1173,13 @@ public class GenericDatabaseDialect implements DatabaseDialect {
 
       case Types.NUMERIC:
         if (mapNumerics == NumericMapping.PRECISION_ONLY) {
-          glog.debug("NUMERIC with precision: '{}' and scale: '{}'", precision, scale);
+          log.info("-->NUMERIC with precision: '{}' and scale: '{}'", precision, scale);
           if (scale == 0 && precision <= MAX_INTEGER_TYPE_PRECISION) { // integer
             builder.field(fieldName, integerSchema(optional, precision));
             break;
           }
         } else if (mapNumerics == NumericMapping.BEST_FIT) {
-          glog.debug("NUMERIC with precision: '{}' and scale: '{}'", precision, scale);
+          log.info("-->NUMERIC with precision: '{}' and scale: '{}'", precision, scale);
           if (precision <= MAX_INTEGER_TYPE_PRECISION) { // fits in primitive data types.
             if (scale < 1 && scale >= NUMERIC_TYPE_SCALE_LOW) { // integer
               builder.field(fieldName, integerSchema(optional, precision));
@@ -1115,7 +1191,7 @@ public class GenericDatabaseDialect implements DatabaseDialect {
             }
           }
         } else if (mapNumerics == NumericMapping.BEST_FIT_EAGER_DOUBLE) {
-          glog.debug("NUMERIC with precision: '{}' and scale: '{}'", precision, scale);
+          log.info("-->NUMERIC with precision: '{}' and scale: '{}'", precision, scale);
           if (scale < 1 && scale >= NUMERIC_TYPE_SCALE_LOW) { // integer
             if (precision <= MAX_INTEGER_TYPE_PRECISION) { // fits in primitive data types.
               builder.field(fieldName, integerSchema(optional, precision));
@@ -1130,7 +1206,7 @@ public class GenericDatabaseDialect implements DatabaseDialect {
         // fallthrough
 
       case Types.DECIMAL: {
-        glog.debug("DECIMAL with precision: '{}' and scale: '{}'", precision, scale);
+        log.info("-->DECIMAL with precision: '{}' and scale: '{}'", precision, scale);
         scale = decimalScale(columnDefn);
         SchemaBuilder fieldBuilder = Decimal.builder(scale);
         fieldBuilder.parameter(PRECISION_FIELD, Integer.toString(precision));
@@ -1379,7 +1455,7 @@ public class GenericDatabaseDialect implements DatabaseDialect {
 
       case Types.DECIMAL: {
         final int precision = defn.precision();
-        glog.debug("DECIMAL with precision: '{}' and scale: '{}'", precision, defn.scale());
+        log.info("-->DECIMAL with precision: '{}' and scale: '{}'", precision, defn.scale());
         final int scale = decimalScale(defn);
         return rs -> rs.getBigDecimal(col, scale);
       }
@@ -1832,12 +1908,14 @@ public class GenericDatabaseDialect implements DatabaseDialect {
   ) throws ConnectException { }
 
   protected List<String> extractPrimaryKeyFieldNames(Collection<SinkRecordField> fields) {
+    log.info("-->extractPrimaryKeyFieldNames start");
     final List<String> pks = new ArrayList<>();
     for (SinkRecordField f : fields) {
       if (f.isPrimaryKey()) {
         pks.add(f.name());
       }
     }
+    log.info("-->extractPrimaryKeyFieldNames end");
     return pks;
   }
 

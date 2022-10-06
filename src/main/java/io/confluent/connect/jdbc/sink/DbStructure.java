@@ -113,14 +113,16 @@ public class DbStructure {
       final TableId tableId,
       final FieldsMetadata fieldsMetadata
   ) throws SQLException, TableAlterOrCreateException {
+    log.info("-->create start");
     if (!config.autoCreate) {
       throw new TableAlterOrCreateException(
           String.format("Table %s is missing and auto-creation is disabled", tableId)
       );
     }
     String sql = dbDialect.buildCreateTableStatement(tableId, fieldsMetadata.allFields.values());
-    log.info("Creating table with sql: {}", sql);
+    log.info("-->Creating table with sql: {}", sql);
     dbDialect.applyDdlStatements(connection, Collections.singletonList(sql));
+    log.info("-->create end");
   }
 
   /**
@@ -139,7 +141,9 @@ public class DbStructure {
     //   a case we check for here.
     //   We also don't check if the data types for columns that do line-up are compatible.
 
+    log.info("-->amendIfNecessary start");
     final TableDefinition tableDefn = tableDefns.get(connection, tableId);
+    log.info("-->amendIfNecessary tableDefn={}",tableDefn);
 
     // FIXME: SQLite JDBC driver seems to not always return the PK column names?
     //    if (!tableMetadata.getPrimaryKeyColumnNames().equals(fieldsMetadata.keyFieldNames)) {
@@ -149,9 +153,13 @@ public class DbStructure {
     //      ));
     //    }
 
-    final Set<SinkRecordField> missingFields = missingFields(
-        fieldsMetadata.allFields.values(),
-        tableDefn.columnNames()
+    log.info("-->amendIfNecessary call missingFields fieldsMetadata={} tableDefn={}",
+            fieldsMetadata,
+            tableDefn);
+
+    final Set<SinkRecordField> missingFields = retrieveMissingFields(
+        fieldsMetadata,
+        tableDefn
     );
 
     if (missingFields.isEmpty()) {
@@ -236,10 +244,27 @@ public class DbStructure {
     return true;
   }
 
+  Set<SinkRecordField> retrieveMissingFields(
+          FieldsMetadata fieldsMetadata,
+          TableDefinition tableDefn
+  ) {
+    if (null == tableDefn || null == fieldsMetadata) {
+      log.warn("--> tableDefn or fieldsMetadata are null");
+      return Collections.emptySet();
+    }
+
+    return missingFields(
+            fieldsMetadata.allFields.values(),
+            tableDefn.columnNames()
+    );
+  }
+
   Set<SinkRecordField> missingFields(
       Collection<SinkRecordField> fields,
       Set<String> dbColumnNames
   ) {
+    log.info("-->missingFields start");
+    log.info("-->missingFields fields isNull={}", null == fields);
     final Set<SinkRecordField> missingFields = new HashSet<>();
     for (SinkRecordField field : fields) {
       if (!dbColumnNames.contains(field.name())) {
@@ -249,10 +274,12 @@ public class DbStructure {
     }
 
     if (missingFields.isEmpty()) {
+      log.info("-->missingFields. No missing fields found");
       return missingFields;
     }
 
     // check if the missing fields can be located by ignoring case
+    log.info("-->missingFields. check if the missing fields can be located by ignoring case");
     Set<String> columnNamesLowerCase = new HashSet<>();
     for (String columnName: dbColumnNames) {
       columnNamesLowerCase.add(columnName.toLowerCase());
@@ -280,6 +307,7 @@ public class DbStructure {
       );
     }
 
+    log.info("-->missingFields end");
     return missingFieldsIgnoreCase;
   }
 }

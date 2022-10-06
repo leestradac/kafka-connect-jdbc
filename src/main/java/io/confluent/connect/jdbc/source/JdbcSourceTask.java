@@ -90,14 +90,23 @@ public class JdbcSourceTask extends SourceTask {
   @Override
   public void start(Map<String, String> properties) {
     log.info("Starting JDBC source task");
+    log.info("-->JdbcSourceTask start");
     try {
+      log.info("-->JdbcSourceTask JdbcSourceTaskConfig start");
       config = new JdbcSourceTaskConfig(properties);
+      log.info("-->JdbcSourceTask JdbcSourceTaskConfig done");
     } catch (ConfigException e) {
       throw new ConnectException("Couldn't start JdbcSourceTask due to configuration error", e);
     }
 
+    log.info("-->JdbcSourceTask get tables using config.getList start");
     List<String> tables = config.getList(JdbcSourceTaskConfig.TABLES_CONFIG);
+    log.info("-->JdbcSourceTask get tables using config.getList done");
+    log.info("-->tables={}", tables.toArray(new String[0]));
+
+    log.info("-->JdbcSourceTask get query config using config.getString start");
     String query = config.getString(JdbcSourceTaskConfig.QUERY_CONFIG);
+    log.info("-->JdbcSourceTask get query config using config.getString done query={}",query);
 
     if ((tables.isEmpty() && query.isEmpty())) {
       throw new ConnectException("Task is being killed because"
@@ -145,6 +154,7 @@ public class JdbcSourceTask extends SourceTask {
                                  ? Collections.singletonList(query) : tables;
 
     String mode = config.getString(JdbcSourceTaskConfig.MODE_CONFIG);
+    log.info("-->JdbcSourceTask get mode config.getString done mode={}",mode);
     //used only in table mode
     Map<String, List<Map<String, String>>> partitionsByTableFqn = new HashMap<>();
     Map<Map<String, String>, Map<String, Object>> offsets = null;
@@ -154,7 +164,7 @@ public class JdbcSourceTask extends SourceTask {
       List<Map<String, String>> partitions = new ArrayList<>(tables.size());
       switch (queryMode) {
         case TABLE:
-          log.trace("Starting in TABLE mode");
+          log.info("-->Starting in TABLE mode");
           for (String table : tables) {
             // Find possible partition maps for different offset protocols
             // We need to search by all offset protocol partition keys to support compatibility
@@ -164,7 +174,7 @@ public class JdbcSourceTask extends SourceTask {
           }
           break;
         case QUERY:
-          log.trace("Starting in QUERY mode");
+          log.info("-->Starting in QUERY mode");
           partitions.add(Collections.singletonMap(JdbcSourceConnectorConstants.QUERY_NAME_KEY,
                                                   JdbcSourceConnectorConstants.QUERY_NAME_VALUE));
           break;
@@ -172,7 +182,7 @@ public class JdbcSourceTask extends SourceTask {
           throw new ConnectException("Unknown query mode: " + queryMode);
       }
       offsets = context.offsetStorageReader().offsets(partitions);
-      log.trace("The partition offsets are {}", offsets);
+      log.info("-->The partition offsets are {}", offsets);
     }
 
     String incrementingColumn
@@ -386,7 +396,7 @@ public class JdbcSourceTask extends SourceTask {
 
   @Override
   public List<SourceRecord> poll() throws InterruptedException {
-    log.trace("{} Polling for new data");
+    log.info("-->{} Polling for new data");
 
     Map<TableQuerier, Integer> consecutiveEmptyResults = tableQueue.stream().collect(
         Collectors.toMap(Function.identity(), (q) -> 0));
@@ -401,7 +411,7 @@ public class JdbcSourceTask extends SourceTask {
         final long sleepMs = Math.min(nextUpdate - now, 100);
 
         if (sleepMs > 0) {
-          log.trace("Waiting {} ms to poll {} next", nextUpdate - now, querier.toString());
+          log.info("-->Waiting {} ms to poll {} next", nextUpdate - now, querier.toString());
           time.sleep(sleepMs);
           continue; // Re-check stop flag before continuing
         }
@@ -409,7 +419,7 @@ public class JdbcSourceTask extends SourceTask {
 
       final List<SourceRecord> results = new ArrayList<>();
       try {
-        log.debug("Checking for next block of results from {}", querier.toString());
+        log.info("-->Checking for next block of results from {}", querier.toString());
         querier.maybeStartQuery(cachedConnectionProvider.getConnection());
 
         int batchMaxRows = config.getInt(JdbcSourceTaskConfig.BATCH_MAX_ROWS_CONFIG);
@@ -427,11 +437,11 @@ public class JdbcSourceTask extends SourceTask {
 
         if (results.isEmpty()) {
           consecutiveEmptyResults.compute(querier, (k, v) -> v + 1);
-          log.trace("No updates for {}", querier.toString());
+          log.info("-->No updates for {}", querier.toString());
 
           if (Collections.min(consecutiveEmptyResults.values())
               >= CONSECUTIVE_EMPTY_RESULTS_BEFORE_RETURN) {
-            log.trace("More than " + CONSECUTIVE_EMPTY_RESULTS_BEFORE_RETURN
+            log.info("-->More than " + CONSECUTIVE_EMPTY_RESULTS_BEFORE_RETURN
                 + " consecutive empty results for all queriers, returning");
             return null;
           } else {
@@ -441,7 +451,7 @@ public class JdbcSourceTask extends SourceTask {
           consecutiveEmptyResults.put(querier, 0);
         }
 
-        log.debug("Returning {} records for {}", results.size(), querier);
+        log.info("-->Returning {} records for {}", results.size(), querier);
         return results;
       } catch (SQLNonTransientException sqle) {
         log.error("Non-transient SQL exception while running query for table: {}",

@@ -56,16 +56,22 @@ public class TableDefinitions {
       Connection connection,
       final TableId tableId
   ) throws SQLException {
+    log.info("-->TableDefinition get start");
     TableDefinition dbTable = cache.get(tableId);
     if (dbTable == null) {
+      log.info("-->TableDefinition dbTable is null");
       if (dialect.tableExists(connection, tableId)) {
+        log.info("-->TableDefinition table Exists, calling describeTable...");
         dbTable = dialect.describeTable(connection, tableId);
+        log.info("-->TableDefinition describeTable dbTable={}",dbTable);
         if (dbTable != null) {
-          log.info("Setting metadata for table {} to {}", tableId, dbTable);
+          log.info("-->Setting metadata for table {} to {}", tableId, dbTable);
           cache.put(tableId, dbTable);
         }
       }
     }
+    log.info("-->TableDefinition return dbTable={}", dbTable);
+    log.info("-->TableDefinition get done");
     return dbTable;
   }
 
@@ -81,13 +87,16 @@ public class TableDefinitions {
       Connection connection,
       TableId tableId
   ) throws SQLException {
+    log.info("-->TableDefinition refresh start");
     TableDefinition dbTable = dialect.describeTable(connection, tableId);
     if (dbTable != null) {
-      log.info("Refreshing metadata for table {} to {}", tableId, dbTable);
+      log.info("-->Refreshing metadata for table {} to {}", tableId, dbTable);
       cache.put(dbTable.id(), dbTable);
     } else {
       log.warn("Failed to refresh metadata for table {}", tableId);
     }
+    log.info("-->TableDefinition return dbTable={}",dbTable);
+    log.info("-->TableDefinition refresh done");
     return dbTable;
   }
 }

@@ -124,6 +124,8 @@ public class MySqlDatabaseDialect extends GenericDatabaseDialect {
         return "TEXT(256)";
       case BYTES:
         return "VARBINARY(1024)";
+      case ARRAY:
+        return "TEXT(64)";
       default:
         return super.getSqlType(field);
     }

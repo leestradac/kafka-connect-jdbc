@@ -30,11 +30,14 @@ import io.confluent.connect.jdbc.dialect.DatabaseDialect;
 import io.confluent.connect.jdbc.dialect.DatabaseDialect.StatementBinder;
 import io.confluent.connect.jdbc.sink.metadata.FieldsMetadata;
 import io.confluent.connect.jdbc.sink.metadata.SchemaPair;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import static java.util.Objects.isNull;
 
 public class PreparedStatementBinder implements StatementBinder {
 
+  private static final Logger log = LoggerFactory.getLogger(PreparedStatementBinder.class);
   private final JdbcSinkConfig.PrimaryKeyMode pkMode;
   private final PreparedStatement statement;
   private final SchemaPair schemaPair;
@@ -135,6 +138,9 @@ public class PreparedStatementBinder implements StatementBinder {
       break;
 
       case RECORD_KEY: {
+        log.info("-->bindKeyFields RECORD_KEY");
+        log.info("-->bindKeyFields RECORD_KEY before process statement={}",
+                statement.toString());
         if (schemaPair.keySchema.type().isPrimitive()) {
           assert fieldsMetadata.keyFieldNames.size() == 1;
           bindField(index++, schemaPair.keySchema, record.key(),
@@ -145,6 +151,8 @@ public class PreparedStatementBinder implements StatementBinder {
             bindField(index++, field.schema(), ((Struct) record.key()).get(field), fieldName);
           }
         }
+        log.info("-->bindKeyFields RECORD_KEY after process statement={}",
+                statement.toString());
       }
       break;
 
@@ -182,7 +190,14 @@ public class PreparedStatementBinder implements StatementBinder {
 
   protected void bindField(int index, Schema schema, Object value, String fieldName)
       throws SQLException {
+    log.info("-->bindField start");
+    log.info("-->bindField index={} fieldName={} value={}",index,fieldName, value);
     ColumnDefinition colDef = tabDef == null ? null : tabDef.definitionForColumn(fieldName);
+    log.info("-->bindField colDef={}",colDef);
+    log.info("-->bindField schema={} schema.toString={}",schema, schema.toString());
+    log.info("-->bindField before bind statement={}",statement.toString());
     dialect.bindField(statement, index, schema, value, colDef);
+    log.info("-->bindField after bind statement={}",statement.toString());
+    log.info("-->bindField done");
   }
 }

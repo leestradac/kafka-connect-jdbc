@@ -95,7 +95,7 @@ public class TableDefinitions {
     } else {
       log.warn("Failed to refresh metadata for table {}", tableId);
     }
-    log.info("-->TableDefinition return dbTable={}",dbTable);
+    log.info("-->TableDefinition refresh return dbTable={}",dbTable);
     log.info("-->TableDefinition refresh done");
     return dbTable;
   }

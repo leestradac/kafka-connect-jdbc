@@ -100,9 +100,9 @@ public class JdbcSourceTask extends SourceTask {
     }
 
     log.info("-->JdbcSourceTask get tables using config.getList start");
-    List<String> tables = config.getList(JdbcSourceTaskConfig.TABLES_CONFIG);
+    final List<String> tables = config.getList(JdbcSourceTaskConfig.TABLES_CONFIG);
     log.info("-->JdbcSourceTask get tables using config.getList done");
-    log.info("-->tables={}", tables.toArray(new String[0]));
+    //log.info("-->tables={}", tables.toArray(new String[0]));
 
     log.info("-->JdbcSourceTask get query config using config.getString start");
     String query = config.getString(JdbcSourceTaskConfig.QUERY_CONFIG);

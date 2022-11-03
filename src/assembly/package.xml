@@ -34,10 +34,8 @@
         <dependencySet>
             <outputDirectory>share/java/kafka-connect-jdbc</outputDirectory>
             <useProjectArtifact>true</useProjectArtifact>
-            <useTransitiveFiltering>true</useTransitiveFiltering>
-            <excludes>
-                <exclude>org.apache.kafka:connect-api</exclude>
-            </excludes>
+            <unpack>true</unpack>
+            <scope>runtime</scope>
         </dependencySet>
     </dependencySets>
 </assembly>

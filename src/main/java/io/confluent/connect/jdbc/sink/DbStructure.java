@@ -162,6 +162,8 @@ public class DbStructure {
         tableDefn
     );
 
+    log.info("TODO: luis please fixme");
+    //TODO: luis please fixme
     if (missingFields.isEmpty()) {
       return false;
     }
@@ -268,6 +270,7 @@ public class DbStructure {
     final Set<SinkRecordField> missingFields = new HashSet<>();
     for (SinkRecordField field : fields) {
       if (!dbColumnNames.contains(field.name())) {
+        log.info("-->missingFields Found missing field: {}", field);
         log.debug("Found missing field: {}", field);
         missingFields.add(field);
       }

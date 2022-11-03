@@ -81,14 +81,17 @@ public class JdbcSinkTask extends SinkTask {
         recordsCount, first.topic(), first.kafkaPartition(), first.kafkaOffset()
     );
     try {
+      log.info("-->JdbcSinkTask.put writer.write(records)");
       writer.write(records);
     } catch (TableAlterOrCreateException tace) {
+      log.error("-->JdbcSinkTask.put Error tace : {}", tace.getMessage());
       if (reporter != null) {
         unrollAndRetry(records);
       } else {
         throw tace;
       }
     } catch (SQLException sqle) {
+      log.error("-->JdbcSinkTask.put Error sqle : {}", sqle.getMessage());
       log.warn(
           "Write of {} records failed, remainingRetries={}",
           records.size(),

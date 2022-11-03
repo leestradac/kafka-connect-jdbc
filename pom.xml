@@ -66,6 +66,7 @@
         <licenses.name>Confluent Community License</licenses.name>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.package.home>target/${project.artifactId}-${project.version}-package</project.package.home>
+        <!--project.package.home>/C/luis/vms/SHARED/target/kafka_connect_jdbc/target/${project.artifactId}-${project.version}-package</project.package.home-->
         <maven.release.plugin.version>2.5.3</maven.release.plugin.version>
         <testcontainers.version>1.16.2</testcontainers.version>
     </properties>
@@ -504,6 +505,22 @@
             <id>standalone</id>
             <build>
                 <plugins>
+                    <plugin>
+                        <!-- Build an executable JAR -->
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-jar-plugin</artifactId>
+                        <version>3.1.0</version>
+                        <configuration>
+                            <archive>
+                                <manifest>
+                                    <addClasspath>true</addClasspath>
+                                    <classpathPrefix>lib/</classpathPrefix>
+                                    <mainClass>io.confluent.connect.jdbc.JdbcSinkConnector</mainClass>
+                                </manifest>
+                            </archive>
+                        </configuration>
+                    </plugin>
+
                     <plugin>
                         <artifactId>maven-assembly-plugin</artifactId>
                         <configuration>

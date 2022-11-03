@@ -127,6 +127,13 @@ public class BufferedRecords {
       );
       final String insertSql = getInsertSql();
       final String deleteSql = getDeleteSql();
+      log.info(
+              "{} sql: {} deleteSql: {} meta: {}",
+              config.insertMode,
+              insertSql,
+              deleteSql,
+              fieldsMetadata
+      );
       log.debug(
           "{} sql: {} deleteSql: {} meta: {}",
           config.insertMode,
@@ -167,39 +174,70 @@ public class BufferedRecords {
     if (records.size() >= config.batchSize) {
       flushed.addAll(flush());
     }
+    log.info("-->BufferedRecords.add() done");
     return flushed;
   }
 
   public List<SinkRecord> flush() throws SQLException {
+    log.info("-->BufferedRecords.flush() start");
     if (records.isEmpty()) {
+      log.info("-->BufferedRecords.flush() Records is empty");
       log.debug("Records is empty");
       return new ArrayList<>();
     }
+
+    log.info("-->BufferedRecords.flush() NO RECORDS updateStatementBinder={}",
+            updateStatementBinder.toString());
+    log.info("-->BufferedRecords.flush() Flushing {} buffered records", records.size());
     log.debug("Flushing {} buffered records", records.size());
     for (SinkRecord record : records) {
       if (isNull(record.value()) && nonNull(deleteStatementBinder)) {
         deleteStatementBinder.bindRecord(record);
       } else {
+        if (null != record.value()) {
+          log.info("-->BufferedRecords.flush() updateStatementBinder record.value={}",
+                  record.value().toString());
+        }
         updateStatementBinder.bindRecord(record);
       }
     }
-    executeUpdates();
+    log.info("-->BufferedRecords.flush() updateStatementBinder={}",
+            updateStatementBinder.toString());
+    executeUpdatesNoBatch();
     executeDeletes();
 
     final List<SinkRecord> flushedRecords = records;
     records = new ArrayList<>();
     deletesInBatch = false;
+    log.info("-->BufferedRecords.flush() done");
     return flushedRecords;
   }
 
   private void executeUpdates() throws SQLException {
+    log.info("-->BufferedRecords.executeUpdates start()");
+    log.info("-->BufferedRecords.executeUpdates updatePreparedStatement={}",
+            updatePreparedStatement.toString());
+
     int[] batchStatus = updatePreparedStatement.executeBatch();
+    log.info("-->BufferedRecords.executeUpdates updatePreparedStatement.executeBatch() Completed");
     for (int updateCount : batchStatus) {
       if (updateCount == Statement.EXECUTE_FAILED) {
+        log.error("-->BufferedRecords.executeUpdates ERROR!!!");
         throw new BatchUpdateException(
                 "Execution failed for part of the batch update", batchStatus);
       }
     }
+    log.info("-->BufferedRecords.executeUpdates done()");
+  }
+
+  private void executeUpdatesNoBatch() throws SQLException {
+    log.info("-->BufferedRecords.executeUpdatesNoBatch start()");
+    log.info("-->BufferedRecords.executeUpdatesNoBatch updatePreparedStatement={}",
+            updatePreparedStatement.toString());
+
+    updatePreparedStatement.execute();
+
+    log.info("-->BufferedRecords.executeUpdatesNoBatch done()");
   }
 
   private void executeDeletes() throws SQLException {
@@ -254,12 +292,15 @@ public class BufferedRecords {
               asColumns(fieldsMetadata.nonKeyFieldNames),
               dbStructure.tableDefinition(connection, tableId)
           );
-        } catch (UnsupportedOperationException e) {
+        } catch (Exception e) {
+          log.error("-->buildUpsertQueryStatement ERROR!!!!");
           throw new ConnectException(String.format(
               "Write to table '%s' in UPSERT mode is not supported with the %s dialect.",
               tableId,
               dbDialect.name()
           ));
+        } finally {
+          log.info("-->buildUpsertQueryStatement done");
         }
       case UPDATE:
         return dbDialect.buildUpdateStatement(

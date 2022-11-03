@@ -17,9 +17,11 @@ package io.confluent.connect.jdbc.dialect;
 
 import io.confluent.connect.jdbc.dialect.DatabaseDialectProvider.SubprotocolBasedProvider;
 import io.confluent.connect.jdbc.sink.metadata.SinkRecordField;
+import io.confluent.connect.jdbc.util.ColumnDefinition;
 import io.confluent.connect.jdbc.util.ColumnId;
 import io.confluent.connect.jdbc.util.ExpressionBuilder;
 import io.confluent.connect.jdbc.util.IdentifierRules;
+import io.confluent.connect.jdbc.util.TableDefinition;
 import io.confluent.connect.jdbc.util.TableId;
 import org.apache.kafka.common.config.AbstractConfig;
 import org.apache.kafka.connect.data.Date;
@@ -30,10 +32,14 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.sql.Connection;
+import java.sql.DatabaseMetaData;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.PreparedStatement;
 import java.util.Collection;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * A {@link HiveDatabaseDialect} for Hive.
@@ -87,6 +93,148 @@ public class HiveDatabaseDialect extends GenericDatabaseDialect {
   }
 
   @Override
+  public Map<ColumnId, ColumnDefinition> describeColumns(
+          Connection connection,
+          String catalogPattern,
+          String schemaPattern,
+          String tablePattern,
+          String columnPattern
+  ) throws SQLException {
+    log.info("-->describeColumns HIVE start");
+    log.info("-->describeColumns HIVE connection={}",connection);
+    log.info("-->describeColumns HIVE connection.getTypeInfo={}",
+            connection.getMetaData().getTypeInfo());
+    log.info("-->describeColumns HIVE connection.getURL={}",
+            connection.getMetaData().getURL());
+    log.info("-->describeColumns HIVE connection.getIdentifierQuoteString={}",
+            connection.getMetaData().getIdentifierQuoteString());
+    log.info("-->describeColumns HIVE connection.getClientInfoProperties={}",
+            connection.getMetaData().getClientInfoProperties());
+    log.info("-->describeColumns HIVE catalogPattern={}",catalogPattern);
+    log.info("-->describeColumns HIVE schemaPattern={}",schemaPattern);
+    log.info("-->describeColumns HIVE tablePattern={}",tablePattern);
+    log.info("-->describeColumns HIVE columnPattern={}",columnPattern);
+    log.info("-->Querying {} dialect column metadata for catalog:{} schema:{} table:{}",
+            this,
+            catalogPattern,
+            schemaPattern,
+            tablePattern
+    );
+
+    // Get the primary keys of the table(s) ...
+    log.info("-->describeColumns HIVE calling primaryKeyColumns");
+    final Set<ColumnId> pkColumns = primaryKeyColumns(
+            connection,
+            catalogPattern,
+            schemaPattern,
+            tablePattern
+    );
+    Map<ColumnId, ColumnDefinition> results = new HashMap<>();
+    log.info("-->describeColumns HIVE connection.getMetaData().getColumns");
+    try (ResultSet rs = connection.getMetaData().getColumns(
+            catalogPattern,
+            schemaPattern,
+            tablePattern,
+            columnPattern
+    )) {
+      log.info("-->describeColumns HIVE connection.getMetaData().getColumns success");
+
+      extracted(pkColumns, results, rs);
+
+      log.info("-->describeColumns HIVE results.size={}",
+              results.size());
+      log.info("-->describeColumns HIVE end");
+      return results;
+    }
+  }
+
+  private void extracted(Set<ColumnId> pkColumns, Map<ColumnId, ColumnDefinition> results,
+                         ResultSet rs) throws SQLException {
+
+
+    final int rsColumnCount = rs.getMetaData().getColumnCount();
+    log.info("--->rsColumnCount={}",rsColumnCount);
+
+    int i = 0;
+    log.info("-->before while loop rs={}",rs);
+    while (rs.next() || i < rsColumnCount) {
+      log.info("--->describeColumns HIVE reading rs. {}/{}",++i, rsColumnCount);
+
+      final String catalogName = rs.getMetaData().getCatalogName(i);//rs.getString(1);
+      final String schemaName = rs.getMetaData().getSchemaName(i);//rs.getString(2);
+      final String tableName = rs.getMetaData().getTableName(i);//rs.getString(3);
+      log.info("--->describeColumns HIVE catalogName={} schemaName={} tableName={}",
+              catalogName,schemaName,tableName);
+      final TableId tableId = new TableId(catalogName, schemaName, tableName);
+      final String columnName = rs.getMetaData().getColumnName(i);//rs.getString(4);
+      final ColumnId columnId = new ColumnId(tableId, columnName, null);
+      final int jdbcType = rs.getMetaData().getColumnType(i);//rs.getInt(5); ??
+      final String typeName = rs.getMetaData().getColumnTypeName(i);//rs.getString(6); ??
+      log.info("--->describeColumns HIVE columnName={} columnId={} jdbcType={} typeName={}",
+              columnName,columnId,jdbcType,typeName);
+      final int precision = rs.getMetaData().getPrecision(i);//rs.getInt(7);
+      final int scale = rs.getMetaData().getScale(i);//rs.getInt(9);
+      final String typeClassName = null;
+      ColumnDefinition.Nullability nullability;
+      final int nullableValue = rs.getMetaData().isNullable(i);//rs.getInt(11);
+      log.info("--->describeColumns HIVE nullableValue={}",nullableValue);
+      switch (nullableValue) {
+        case DatabaseMetaData.columnNoNulls:
+          nullability = ColumnDefinition.Nullability.NOT_NULL;
+          break;
+        case DatabaseMetaData.columnNullable:
+          nullability = ColumnDefinition.Nullability.NULL;
+          break;
+        case DatabaseMetaData.columnNullableUnknown:
+        default:
+          nullability = ColumnDefinition.Nullability.UNKNOWN;
+          break;
+      }
+      Boolean autoIncremented = null;
+
+      if (rsColumnCount >= 23) {
+        // Not all drivers include all columns ...
+        log.info("-->rsColumnCount>=23. Not all drivers include all columns");
+        autoIncremented = rs.getMetaData().isAutoIncrement(i);
+        log.info("-->rsColumnCount>=23. autoIncremented={}", autoIncremented);
+      }
+      Boolean signed = null;
+      Boolean caseSensitive = null;
+      Boolean searchable = null;
+      Boolean currency = null;
+      Integer displaySize = null;
+      boolean isPrimaryKey = pkColumns.contains(columnId);
+      if (isPrimaryKey) {
+        // Some DBMSes report pks as null
+        nullability = ColumnDefinition.Nullability.NOT_NULL;
+      }
+      ColumnDefinition defn = columnDefinition(
+              rs,
+              columnId,
+              jdbcType,
+              typeName,
+              typeClassName,
+              nullability,
+              ColumnDefinition.Mutability.UNKNOWN,
+              precision,
+              scale,
+              signed,
+              displaySize,
+              autoIncremented,
+              caseSensitive,
+              searchable,
+              currency,
+              isPrimaryKey
+      );
+      log.info("--->describeColumns HIVE results add columnId={}, defn={}",
+              columnId,
+              defn);
+
+      results.put(columnId, defn);
+    }
+  }
+
+  @Override
   protected String getSqlType(SinkRecordField field) {
     if (field.schemaName() != null) {
       switch (field.schemaName()) {
@@ -126,29 +274,127 @@ public class HiveDatabaseDialect extends GenericDatabaseDialect {
     }
   }
 
-  @Override
-  public String buildUpsertQueryStatement(
-      TableId table,
-      Collection<ColumnId> keyColumns,
-      Collection<ColumnId> nonKeyColumns
+  public String buildInsertStatementOrg(
+          TableId table,
+          Collection<ColumnId> keyColumns,
+          Collection<ColumnId> nonKeyColumns,
+          TableDefinition definition
   ) {
-    log.info("-->start buildUpsertQueryStatement table={} keyColumns={} nonKeyColumns={}",
-            table, keyColumns, nonKeyColumns);
-    //Hive doesn't support PK, TODO: merge so here how the upsert is handled
     ExpressionBuilder builder = expressionBuilder();
-    builder.append("insert into ");
+    builder.append("INSERT INTO ");
     builder.append(table);
-    builder.append("(");
+    builder.append(" (");
     builder.appendList()
-           .delimitedBy(",")
-           .transformedBy(ExpressionBuilder.columnNames())
-           .of(keyColumns, nonKeyColumns);
-    builder.append(") values(");
-    builder.appendMultiple(",", "?", keyColumns.size() + nonKeyColumns.size());
-
-    log.info("-->end buildUpsertQueryStatement query={}",builder);
+            .delimitedBy(",")
+            .transformedBy(ExpressionBuilder.columnNames())
+            .of(keyColumns, nonKeyColumns);
+    builder.append(") VALUES (");
+    builder.appendList()
+            .delimitedBy(",")
+            .transformedBy(this.columnValueVariables(definition))
+            .of(keyColumns, nonKeyColumns);
+    builder.append(")");
     return builder.toString();
   }
+
+  @Override
+  public String buildInsertStatement(
+          TableId table,
+          Collection<ColumnId> keyColumns,
+          Collection<ColumnId> nonKeyColumns,
+          TableDefinition definition
+  ) {
+    String result = buildUpsertQueryStatement(table, keyColumns, nonKeyColumns);
+    log.info("-->buildInsertStatement {}",result);
+    return result;
+  }
+
+  @Override
+  public String buildUpdateStatement(
+          TableId table,
+          Collection<ColumnId> keyColumns,
+          Collection<ColumnId> nonKeyColumns,
+          TableDefinition definition
+  ) {
+    ExpressionBuilder builder = expressionBuilder();
+    builder.append("UPDATE ");
+    builder.append(table);
+    builder.append(" SET ");
+    builder.appendList()
+            .delimitedBy(", ")
+            .transformedBy(this.columnNamesWithValueVariables(definition))
+            .of(nonKeyColumns);
+    if (!keyColumns.isEmpty()) {
+      builder.append(" WHERE ");
+      builder.appendList()
+              .delimitedBy(" AND ")
+              .transformedBy(ExpressionBuilder.columnNamesWith(" = ?"))
+              .of(keyColumns);
+    }
+    return builder.toString();
+  }
+
+  @Override
+  public String buildUpsertQueryStatement(
+          final TableId table,
+          Collection<ColumnId> keyColumns,
+          Collection<ColumnId> nonKeyColumns
+  ) {
+    log.info("-->buildUpsertQueryStatement HIVE");
+    // https://db.apache.org/derby/docs/10.11/ref/rrefsqljmerge.html
+    final ExpressionBuilder.Transform<ColumnId> transform = (builder, col) -> {
+      builder.append(table)
+              .append(".")
+              .appendColumnName(col.name())
+              .append("=DAT.")
+              .appendColumnName(col.name());
+    };
+
+    ExpressionBuilder builder = expressionBuilder();
+    builder.append("merge into ");
+    builder.append(table);
+    builder.append(" using (values(");
+    builder.appendList()
+            .delimitedBy(", ")
+            .transformedBy(ExpressionBuilder.placeholderInsteadOfColumnNames("?"))
+            .of(keyColumns, nonKeyColumns);
+    builder.append(") as DAT(");
+    builder.appendList()
+            .delimitedBy(", ")
+            .transformedBy(ExpressionBuilder.columnNames())
+            .of(keyColumns, nonKeyColumns);
+    builder.append(")) on ");
+    builder.appendList()
+            .delimitedBy(" and ")
+            .transformedBy(transform)
+            .of(keyColumns);
+
+    log.info("-->buildUpsertQueryStatement HIVE builder={}",builder);
+
+    if (nonKeyColumns != null && !nonKeyColumns.isEmpty()) {
+      log.info("-->buildUpsertQueryStatement HIVE ...when matched then update set...");
+      builder.append(" when matched then update set ");
+      builder.appendList()
+              .delimitedBy(", ")
+              .transformedBy(transform)
+              .of(nonKeyColumns);
+    }
+
+    log.info("-->buildUpsertQueryStatement HIVE builder+KeyColumns={}",builder);
+
+    builder.append(" when not matched then insert(");
+    builder.appendList().delimitedBy(",").of(nonKeyColumns, keyColumns);
+    builder.append(") values(");
+    builder.appendList()
+            .delimitedBy(",")
+            .transformedBy(ExpressionBuilder.columnNamesWithPrefix("DAT."))
+            .of(nonKeyColumns, keyColumns);
+    builder.append(")");
+
+    log.info("-->buildUpsertQueryStatement HIVE DONE FINAL builder={}",builder);
+    return builder.toString();
+  }
+
 
   @Override
   public String buildCreateTableStatement(
@@ -210,6 +456,67 @@ public class HiveDatabaseDialect extends GenericDatabaseDialect {
     }
     log.info("-->HiveDatabaseDialect writeColumnSpec end. ExpressionBuilder={}",builder);
   }
+
+
+  /**
+   * Return the transform that produces an assignment expression each with the name of one of the
+   * columns and the prepared statement variable. PostgreSQL may require the variable to have a
+   * type suffix, such as {@code ?::uuid}.
+   *
+   * @param d the table definition; may be null if unknown
+   * @return the transform that produces the assignment expression for use within a prepared
+   *         statement; never null
+   */
+  protected ExpressionBuilder.Transform<ColumnId> columnNamesWithValueVariables(TableDefinition d) {
+    return (builder, columnId) -> {
+      builder.appendColumnName(columnId.name());
+      builder.append(" = ?");
+      builder.append(valueTypeCast(d, columnId));
+    };
+  }
+
+
+  /**
+   * Return the transform that produces a prepared statement variable for each of the columns.
+   * PostgreSQL may require the variable to have a type suffix, such as {@code ?::uuid}.
+   *
+   * @param defn the table definition; may be null if unknown
+   * @return the transform that produces the variable expression for each column; never null
+   */
+  protected ExpressionBuilder.Transform<ColumnId> columnValueVariables(TableDefinition defn) {
+    return (builder, columnId) -> {
+      builder.append("?");
+      builder.append(valueTypeCast(defn, columnId));
+    };
+  }
+
+  /**
+   * Return the typecast expression that can be used as a suffix for a value variable of the
+   * given column in the defined table.
+   *
+   * <p>This method returns a blank string except for those column types that require casting
+   * when set with literal values. For example, a column of type {@code uuid} must be cast when
+   * being bound with with a {@code varchar} literal, since a UUID value cannot be bound directly.
+   *
+   * @param tableDefn the table definition; may be null if unknown
+   * @param columnId  the column within the table; may not be null
+   * @return the cast expression, or an empty string; never null
+   */
+  protected String valueTypeCast(TableDefinition tableDefn, ColumnId columnId) {
+    if (tableDefn != null) {
+      ColumnDefinition defn = tableDefn.definitionForColumn(columnId.name());
+      if (defn != null) {
+        String typeName = defn.typeName(); // database-specific
+        if (typeName != null) {
+          typeName = typeName.toLowerCase();
+          //TODO Luis:??? we don't have cast types in delta?
+          //if (CAST_TYPES.contains(typeName)) {return "::" + typeName;}
+        }
+      }
+    }
+    return "";
+  }
+
 
   /*
   @Override

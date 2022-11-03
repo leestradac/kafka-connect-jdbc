@@ -879,6 +879,7 @@ public class GenericDatabaseDialect implements DatabaseDialect {
   ) throws SQLException {
 
     log.info("-->primaryKeyColumns start... connection.getMetaData().getPrimaryKeys");
+    log.info("-->primaryKeyColumns schemaPattern={} schemaPattern={} tablePattern={}");
     // Get the primary keys of the table(s) ...
     final Set<ColumnId> pkColumns = new HashSet<>();
     try (ResultSet rs = connection.getMetaData().getPrimaryKeys(
@@ -925,8 +926,16 @@ public class GenericDatabaseDialect implements DatabaseDialect {
   ) throws SQLException {
     glog.info("-->describeTable start");
     glog.info("-->describeTable calling describeColumns");
+    String schema = tableId.schemaName();
+    if (null == schema || schema.isEmpty()) {
+      glog.info("-->describeTable tableId.schemaName() was empty");
+      glog.info("-->describeTable using connection.getSchema()");
+      schema = connection.getSchema();
+    }
+    glog.info("-->describeTable schema = {}", schema);
+
     Map<ColumnId, ColumnDefinition> columnDefns = describeColumns(connection, tableId.catalogName(),
-                                                                  tableId.schemaName(),
+                                                                  schema,
                                                                   tableId.tableName(), null
     );
     glog.info("-->describeTable columnDefns={}",columnDefns);
@@ -1714,14 +1723,18 @@ public class GenericDatabaseDialect implements DatabaseDialect {
       Schema schema,
       Object value
   ) throws SQLException {
+    glog.info("bindField start DEPRECATED !!!!!?????");
     if (value == null) {
+      glog.info("bindField values is null");
       Integer type = getSqlTypeForSchema(schema);
+      glog.info("bindField type={}",type);
       if (type != null) {
         statement.setNull(index, type);
       } else {
         statement.setObject(index, null);
       }
     } else {
+      glog.info("bindField values is not null");
       boolean bound = maybeBindLogical(statement, index, schema, value);
       if (!bound) {
         bound = maybeBindPrimitive(statement, index, schema, value);
@@ -1730,6 +1743,7 @@ public class GenericDatabaseDialect implements DatabaseDialect {
         throw new ConnectException("Unsupported source data type: " + schema.type());
       }
     }
+    glog.info("bindField end DEPRECATED !!!!!?????");
   }
 
   /**
@@ -1750,6 +1764,8 @@ public class GenericDatabaseDialect implements DatabaseDialect {
       Schema schema,
       Object value
   ) throws SQLException {
+    glog.info("-->maybeBindPrimitive index={} schema.type()={} value={}",
+            index, schema.type(), value);
     switch (schema.type()) {
       case INT8:
         statement.setByte(index, (Byte) value);
@@ -1773,6 +1789,7 @@ public class GenericDatabaseDialect implements DatabaseDialect {
         statement.setBoolean(index, (Boolean) value);
         break;
       case STRING:
+        glog.info("-->STRING index={} value={}", index, value);
         statement.setString(index, (String) value);
         break;
       case BYTES:
@@ -1798,6 +1815,9 @@ public class GenericDatabaseDialect implements DatabaseDialect {
       Schema schema,
       Object value
   ) throws SQLException {
+    glog.info("-->maybeBindLogical start");
+    glog.info("-->maybeBindLogical index={} schema.name={} value={}",
+            index, schema.name(), value);
     if (schema.name() != null) {
       switch (schema.name()) {
         case Date.LOGICAL_NAME:
@@ -1811,18 +1831,28 @@ public class GenericDatabaseDialect implements DatabaseDialect {
           statement.setBigDecimal(index, (BigDecimal) value);
           return true;
         case Time.LOGICAL_NAME:
+          glog.info("-->maybeBindLogical Case Time value={}",value);
+          java.sql.Time time = new java.sql.Time(((java.util.Date) value).getTime());
+          glog.info("-->maybeBindLogical Case Time.LOGICAL_NAME time={}",time);
           statement.setTime(
               index,
               new java.sql.Time(((java.util.Date) value).getTime()),
               DateTimeUtils.getTimeZoneCalendar(timeZone)
           );
+          glog.info("-->maybeBindLogical done");
           return true;
         case org.apache.kafka.connect.data.Timestamp.LOGICAL_NAME:
+          glog.info("-->maybeBindLogical Case Timestamp value={}",value);
+          java.sql.Timestamp timestamp =
+                  new java.sql.Timestamp(((java.util.Date) value).getTime());
+          glog.info("-->maybeBindLogical Case Timestamp timestamp={}",
+                  timestamp);
           statement.setTimestamp(
               index,
               new java.sql.Timestamp(((java.util.Date) value).getTime()),
               DateTimeUtils.getTimeZoneCalendar(timeZone)
           );
+          glog.info("-->maybeBindLogical done");
           return true;
         default:
           return false;

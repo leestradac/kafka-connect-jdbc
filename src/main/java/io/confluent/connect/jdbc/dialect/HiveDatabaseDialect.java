@@ -34,10 +34,15 @@ import org.slf4j.LoggerFactory;
 import java.sql.Connection;
 import java.sql.DatabaseMetaData;
 import java.sql.ResultSet;
+import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.sql.PreparedStatement;
+import java.sql.Statement;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -77,7 +82,7 @@ public class HiveDatabaseDialect extends GenericDatabaseDialect {
    * the {@link #createPreparedStatement(Connection, String)} method after the statement is
    * created but before it is returned/used.
    *
-   * <p>This method sets the {@link PreparedStatement#setFetchDirection(int) fetch direction}
+   * <p>HIVE driver is fetch direction forward-only.
    * to {@link ResultSet#FETCH_FORWARD forward} as an optimization for the driver to allow it to
    * scroll more efficiently through the result set and prevent out of memory errors.
    *
@@ -87,151 +92,179 @@ public class HiveDatabaseDialect extends GenericDatabaseDialect {
   @Override
   protected void initializePreparedStatement(PreparedStatement stmt) throws SQLException {
     super.initializePreparedStatement(stmt);
+    log.info("HIVE driver is fetch direction forward-only.");
+  }
 
-    log.trace("Initializing PreparedStatement fetch direction to FETCH_FORWARD for '{}'", stmt);
-    stmt.setFetchDirection(ResultSet.FETCH_FORWARD);
+  /**
+   * Limited to default schema
+   *
+   * @param conn database connection
+   * @return the tableId
+   * @throws SQLException if there is an error with the database connection
+   */
+  @Override
+  public List<TableId> tableIds(Connection conn) throws SQLException {
+    DatabaseMetaData metadata = conn.getMetaData();
+    String[] tableTypes = tableTypes(metadata, this.tableTypes);
+    String tableTypeDisplay = displayableTableTypes(tableTypes, ", ");
+    log.info("Using {} dialect to get {}", this, tableTypeDisplay);
+
+    List<TableId> tableIds = new ArrayList<>();
+
+    try (Statement statement = conn.createStatement()) {
+      if (statement.execute("SHOW Tables")) {
+        ResultSet rs = null;
+        try {
+          // do nothing with the result set
+          rs = statement.getResultSet();
+          while (rs.next()) {
+            String catalogName = rs.getString(null);//conn.getCatalog()
+            String schemaName = rs.getString(1);
+            String tableName = rs.getString(2);
+            TableId tableId = new TableId(catalogName, schemaName, tableName);
+            if (includeTable(tableId)) {
+              tableIds.add(tableId);
+            }
+          }
+        } finally {
+          if (rs != null) {
+            rs.close();
+          }
+        }
+      }
+    }
+    log.info("Used {} dialect to find {} {}", this, tableIds.size(), tableTypeDisplay);
+    return tableIds;
+  }
+
+  @Override
+  public boolean tableExists(
+          Connection connection,
+          TableId tableId
+  ) throws SQLException {
+    log.info("-->tableExists start");
+    DatabaseMetaData metadata = connection.getMetaData();
+    String[] tableTypes = tableTypes(metadata, this.tableTypes);
+    String tableTypeDisplay = displayableTableTypes(tableTypes, "/");
+    log.info("-->Checking {} dialect for existence of {} {}", this, tableTypeDisplay, tableId);
+    boolean exists = false;
+    try (Statement statement = connection.createStatement()) {
+      String query = "SHOW tables in `"
+              + tableId.schemaName() + "` like '" + tableId.tableName() + "'";
+      log.info("-->tableExists query={}",query);
+      if (statement.execute(query)) {
+        ResultSet rs = null;
+        try {
+          // do nothing with the result set
+          rs = statement.getResultSet();
+          exists = rs.next();
+        } finally {
+          if (rs != null) {
+            rs.close();
+          }
+        }
+      }
+    }
+    log.info("-->tableExists exists={} end",exists);
+    return exists;
   }
 
   @Override
   public Map<ColumnId, ColumnDefinition> describeColumns(
+          Connection connection,
+          String tablePattern,
+          String columnPattern
+  ) throws SQLException {
+    //if the table pattern is fqn, then just use the actual table name
+    log.info("-->describeColumns HIVE start connection tablePattern columnPattern");
+    TableId tableId = parseTableIdentifier(tablePattern);
+    String catalog = tableId.catalogName() != null ? tableId.catalogName() : catalogPattern;
+    String schema = tableId.schemaName() != null ? tableId.schemaName() : schemaPattern;
+    log.info("-->describeColumns HIVE tablePattern={} catalogPattern={} schemaPattern={}",
+            tablePattern, catalogPattern,schemaPattern);
+    return describeColumns(connection, catalog , schema, tableId.tableName(), columnPattern);
+  }
+  @Override
+  public Map<ColumnId, ColumnDefinition> describeColumns (
           Connection connection,
           String catalogPattern,
           String schemaPattern,
           String tablePattern,
           String columnPattern
   ) throws SQLException {
-    log.info("-->describeColumns HIVE start");
-    log.info("-->describeColumns HIVE connection={}",connection);
-    log.info("-->describeColumns HIVE connection.getTypeInfo={}",
-            connection.getMetaData().getTypeInfo());
-    log.info("-->describeColumns HIVE connection.getURL={}",
-            connection.getMetaData().getURL());
-    log.info("-->describeColumns HIVE connection.getIdentifierQuoteString={}",
-            connection.getMetaData().getIdentifierQuoteString());
-    log.info("-->describeColumns HIVE connection.getClientInfoProperties={}",
-            connection.getMetaData().getClientInfoProperties());
-    log.info("-->describeColumns HIVE catalogPattern={}",catalogPattern);
-    log.info("-->describeColumns HIVE schemaPattern={}",schemaPattern);
-    log.info("-->describeColumns HIVE tablePattern={}",tablePattern);
-    log.info("-->describeColumns HIVE columnPattern={}",columnPattern);
-    log.info("-->Querying {} dialect column metadata for catalog:{} schema:{} table:{}",
-            this,
-            catalogPattern,
-            schemaPattern,
-            tablePattern
-    );
-
-    // Get the primary keys of the table(s) ...
-    log.info("-->describeColumns HIVE calling primaryKeyColumns");
-    final Set<ColumnId> pkColumns = primaryKeyColumns(
-            connection,
-            catalogPattern,
-            schemaPattern,
-            tablePattern
-    );
+    log.info("-->describeColumnsByQuerying HIVE start");
     Map<ColumnId, ColumnDefinition> results = new HashMap<>();
-    log.info("-->describeColumns HIVE connection.getMetaData().getColumns");
-    try (ResultSet rs = connection.getMetaData().getColumns(
-            catalogPattern,
-            schemaPattern,
-            tablePattern,
-            columnPattern
-    )) {
-      log.info("-->describeColumns HIVE connection.getMetaData().getColumns success");
-
-      extracted(pkColumns, results, rs);
-
-      log.info("-->describeColumns HIVE results.size={}",
-              results.size());
-      log.info("-->describeColumns HIVE end");
-      return results;
+    //TODO add schema, for reading default
+    String queryStr = "SELECT * FROM " + tablePattern + " LIMIT 1";
+    log.info("-->describeColumnsByQuerying HIVE queryStr={}",queryStr);
+//        String quotedName = expressionBuilder().append(tableId).toString();
+//        log.info("-->describeColumnsByQuerying quotedName={}",quotedName);
+    log.info("-->describeColumnsByQuerying PreparedStatement");
+    try (PreparedStatement stmt = connection.prepareStatement(queryStr)) {
+      log.info("-->describeColumnsByQuerying HIVE PreparedStatement success");
+      try (ResultSet rs = stmt.executeQuery()) {
+        TableId tableId = new TableId(null, schemaPattern, tablePattern);
+        ResultSetMetaData rsmd = rs.getMetaData();
+        results = describeColumns(rsmd, tableId);
+      }
     }
+    log.info("-->describeColumns HIVE results.size={}",
+            results.size());
+    log.info("-->describeColumns HIVE end");
+    return results;
   }
 
-  private void extracted(Set<ColumnId> pkColumns, Map<ColumnId, ColumnDefinition> results,
-                         ResultSet rs) throws SQLException {
-
-
-    final int rsColumnCount = rs.getMetaData().getColumnCount();
-    log.info("--->rsColumnCount={}",rsColumnCount);
-
-    int i = 0;
-    log.info("-->before while loop rs={}",rs);
-    while (rs.next() || i < rsColumnCount) {
-      log.info("--->describeColumns HIVE reading rs. {}/{}",++i, rsColumnCount);
-
-      final String catalogName = rs.getMetaData().getCatalogName(i);//rs.getString(1);
-      final String schemaName = rs.getMetaData().getSchemaName(i);//rs.getString(2);
-      final String tableName = rs.getMetaData().getTableName(i);//rs.getString(3);
-      log.info("--->describeColumns HIVE catalogName={} schemaName={} tableName={}",
-              catalogName,schemaName,tableName);
-      final TableId tableId = new TableId(catalogName, schemaName, tableName);
-      final String columnName = rs.getMetaData().getColumnName(i);//rs.getString(4);
-      final ColumnId columnId = new ColumnId(tableId, columnName, null);
-      final int jdbcType = rs.getMetaData().getColumnType(i);//rs.getInt(5); ??
-      final String typeName = rs.getMetaData().getColumnTypeName(i);//rs.getString(6); ??
-      log.info("--->describeColumns HIVE columnName={} columnId={} jdbcType={} typeName={}",
-              columnName,columnId,jdbcType,typeName);
-      final int precision = rs.getMetaData().getPrecision(i);//rs.getInt(7);
-      final int scale = rs.getMetaData().getScale(i);//rs.getInt(9);
-      final String typeClassName = null;
-      ColumnDefinition.Nullability nullability;
-      final int nullableValue = rs.getMetaData().isNullable(i);//rs.getInt(11);
-      log.info("--->describeColumns HIVE nullableValue={}",nullableValue);
-      switch (nullableValue) {
-        case DatabaseMetaData.columnNoNulls:
-          nullability = ColumnDefinition.Nullability.NOT_NULL;
-          break;
-        case DatabaseMetaData.columnNullable:
-          nullability = ColumnDefinition.Nullability.NULL;
-          break;
-        case DatabaseMetaData.columnNullableUnknown:
-        default:
-          nullability = ColumnDefinition.Nullability.UNKNOWN;
-          break;
-      }
-      Boolean autoIncremented = null;
-
-      if (rsColumnCount >= 23) {
-        // Not all drivers include all columns ...
-        log.info("-->rsColumnCount>=23. Not all drivers include all columns");
-        autoIncremented = rs.getMetaData().isAutoIncrement(i);
-        log.info("-->rsColumnCount>=23. autoIncremented={}", autoIncremented);
-      }
-      Boolean signed = null;
-      Boolean caseSensitive = null;
-      Boolean searchable = null;
-      Boolean currency = null;
-      Integer displaySize = null;
-      boolean isPrimaryKey = pkColumns.contains(columnId);
-      if (isPrimaryKey) {
-        // Some DBMSes report pks as null
-        nullability = ColumnDefinition.Nullability.NOT_NULL;
-      }
-      ColumnDefinition defn = columnDefinition(
-              rs,
-              columnId,
-              jdbcType,
-              typeName,
-              typeClassName,
-              nullability,
-              ColumnDefinition.Mutability.UNKNOWN,
-              precision,
-              scale,
-              signed,
-              displaySize,
-              autoIncremented,
-              caseSensitive,
-              searchable,
-              currency,
-              isPrimaryKey
-      );
-      log.info("--->describeColumns HIVE results add columnId={}, defn={}",
-              columnId,
-              defn);
-
-      results.put(columnId, defn);
+  private Map<ColumnId, ColumnDefinition> describeColumns(ResultSetMetaData rsMetadata, TableId tableId) throws
+          SQLException {
+    log.info("-->describeColumns HIVE start");
+    Map<ColumnId, ColumnDefinition> result = new LinkedHashMap<>();
+    for (int i = 1; i <= rsMetadata.getColumnCount(); ++i) {
+      ColumnDefinition defn = describeColumn(rsMetadata, i, tableId);
+      result.put(defn.id(), defn);
     }
+    log.info("-->describeColumns HIVE end");
+    return result;
+  }
+
+  protected ColumnDefinition describeColumn(
+          ResultSetMetaData rsMetadata,
+          int column,
+          TableId tableId
+  ) throws SQLException {
+    String name = rsMetadata.getColumnName(column);
+    String alias = rsMetadata.getColumnLabel(column);
+    ColumnId id = new ColumnId(tableId, name, alias);
+    ColumnDefinition.Nullability nullability;
+    switch (rsMetadata.isNullable(column)) {
+      case ResultSetMetaData.columnNullable:
+        nullability = ColumnDefinition.Nullability.NULL;
+        break;
+      case ResultSetMetaData.columnNoNulls:
+        nullability = ColumnDefinition.Nullability.NOT_NULL;
+        break;
+      case ResultSetMetaData.columnNullableUnknown:
+      default:
+        nullability = ColumnDefinition.Nullability.UNKNOWN;
+        break;
+    }
+    ColumnDefinition.Mutability mutability = ColumnDefinition.Mutability.WRITABLE;
+    return new ColumnDefinition(
+            id,
+            rsMetadata.getColumnType(column),
+            rsMetadata.getColumnTypeName(column),
+            rsMetadata.getColumnClassName(column),
+            nullability,
+            mutability,
+            rsMetadata.getPrecision(column),
+            rsMetadata.getScale(column),
+            rsMetadata.isSigned(column),
+            rsMetadata.getColumnDisplaySize(column),
+            rsMetadata.isAutoIncrement(column),
+            rsMetadata.isCaseSensitive(column),
+            rsMetadata.isSearchable(column),
+            rsMetadata.isCurrency(column),
+            false
+    );
   }
 
   @Override
@@ -274,12 +307,14 @@ public class HiveDatabaseDialect extends GenericDatabaseDialect {
     }
   }
 
-  public String buildInsertStatementOrg(
+  @Override
+  public String buildInsertStatement(
           TableId table,
           Collection<ColumnId> keyColumns,
           Collection<ColumnId> nonKeyColumns,
           TableDefinition definition
   ) {
+    log.info("-->buildInsertStatement Start");
     ExpressionBuilder builder = expressionBuilder();
     builder.append("INSERT INTO ");
     builder.append(table);
@@ -294,20 +329,10 @@ public class HiveDatabaseDialect extends GenericDatabaseDialect {
             .transformedBy(this.columnValueVariables(definition))
             .of(keyColumns, nonKeyColumns);
     builder.append(")");
+    log.info("-->buildInsertStatement {}",builder);
     return builder.toString();
   }
 
-  @Override
-  public String buildInsertStatement(
-          TableId table,
-          Collection<ColumnId> keyColumns,
-          Collection<ColumnId> nonKeyColumns,
-          TableDefinition definition
-  ) {
-    String result = buildUpsertQueryStatement(table, keyColumns, nonKeyColumns);
-    log.info("-->buildInsertStatement {}",result);
-    return result;
-  }
 
   @Override
   public String buildUpdateStatement(

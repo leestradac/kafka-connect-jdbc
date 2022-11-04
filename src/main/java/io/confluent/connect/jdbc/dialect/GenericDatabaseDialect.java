@@ -768,22 +768,22 @@ public class GenericDatabaseDialect implements DatabaseDialect {
           nullability = Nullability.NOT_NULL;
         }
         ColumnDefinition defn = columnDefinition(
-                rs,
-                columnId,
-                jdbcType,
-                typeName,
-                typeClassName,
-                nullability,
-                Mutability.UNKNOWN,
-                precision,
-                scale,
-                signed,
-                displaySize,
-                autoIncremented,
-                caseSensitive,
-                searchable,
-                currency,
-                isPrimaryKey
+            rs,
+            columnId,
+            jdbcType,
+            typeName,
+            typeClassName,
+            nullability,
+            Mutability.UNKNOWN,
+            precision,
+            scale,
+            signed,
+            displaySize,
+            autoIncremented,
+            caseSensitive,
+            searchable,
+            currency,
+            isPrimaryKey
         );
         glog.info("--->describeColumns results add columnId={}, defn={}",
                 columnId,
@@ -802,13 +802,13 @@ public class GenericDatabaseDialect implements DatabaseDialect {
   @Override
   public Map<ColumnId, ColumnDefinition> describeColumns(ResultSetMetaData rsMetadata) throws
       SQLException {
-    log.info("-->describeColumns start");
+    log.info("-->describeColumns rsMetadata start");
     Map<ColumnId, ColumnDefinition> result = new LinkedHashMap<>();
     for (int i = 1; i <= rsMetadata.getColumnCount(); ++i) {
       ColumnDefinition defn = describeColumn(rsMetadata, i);
       result.put(defn.id(), defn);
     }
-    log.info("-->describeColumns end");
+    log.info("-->describeColumns rsMetadata end");
     return result;
   }
 

@@ -44,7 +44,6 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 /**
  * A {@link HiveDatabaseDialect} for Hive.
@@ -184,8 +183,9 @@ public class HiveDatabaseDialect extends GenericDatabaseDialect {
             tablePattern, catalogPattern,schemaPattern);
     return describeColumns(connection, catalog , schema, tableId.tableName(), columnPattern);
   }
+
   @Override
-  public Map<ColumnId, ColumnDefinition> describeColumns (
+  public Map<ColumnId, ColumnDefinition> describeColumns(
           Connection connection,
           String catalogPattern,
           String schemaPattern,
@@ -197,8 +197,6 @@ public class HiveDatabaseDialect extends GenericDatabaseDialect {
     //TODO add schema, for reading default
     String queryStr = "SELECT * FROM " + tablePattern + " LIMIT 1";
     log.info("-->describeColumnsByQuerying HIVE queryStr={}",queryStr);
-//        String quotedName = expressionBuilder().append(tableId).toString();
-//        log.info("-->describeColumnsByQuerying quotedName={}",quotedName);
     log.info("-->describeColumnsByQuerying PreparedStatement");
     try (PreparedStatement stmt = connection.prepareStatement(queryStr)) {
       log.info("-->describeColumnsByQuerying HIVE PreparedStatement success");
@@ -214,7 +212,8 @@ public class HiveDatabaseDialect extends GenericDatabaseDialect {
     return results;
   }
 
-  private Map<ColumnId, ColumnDefinition> describeColumns(ResultSetMetaData rsMetadata, TableId tableId) throws
+  private Map<ColumnId, ColumnDefinition> describeColumns(ResultSetMetaData rsMetadata,
+                                                          TableId tableId) throws
           SQLException {
     log.info("-->describeColumns HIVE start");
     Map<ColumnId, ColumnDefinition> result = new LinkedHashMap<>();

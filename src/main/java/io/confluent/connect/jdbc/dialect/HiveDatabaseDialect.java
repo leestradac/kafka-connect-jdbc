@@ -118,7 +118,8 @@ public class HiveDatabaseDialect extends GenericDatabaseDialect {
           rs = statement.getResultSet();
           while (rs.next()) {
             String catalogName = rs.getString(null);//conn.getCatalog()
-            String schemaName = rs.getString(1);
+            String schemaName = "delta";//rs.getString(1);//TODO: Fix me
+
             String tableName = rs.getString(2);
             TableId tableId = new TableId(catalogName, schemaName, tableName);
             if (includeTable(tableId)) {
@@ -141,7 +142,7 @@ public class HiveDatabaseDialect extends GenericDatabaseDialect {
           Connection connection,
           TableId tableId
   ) throws SQLException {
-    log.info("-->tableExists start");
+    log.info("-->tableExists start HIVE fixme");
     DatabaseMetaData metadata = connection.getMetaData();
     String[] tableTypes = tableTypes(metadata, this.tableTypes);
     String tableTypeDisplay = displayableTableTypes(tableTypes, "/");
@@ -149,7 +150,7 @@ public class HiveDatabaseDialect extends GenericDatabaseDialect {
     boolean exists = false;
     try (Statement statement = connection.createStatement()) {
       String query = "SHOW tables in `"
-              + tableId.schemaName() + "` like '" + tableId.tableName() + "'";
+              + "delta" + "` like '" + tableId.tableName() + "'";
       log.info("-->tableExists query={}",query);
       if (statement.execute(query)) {
         ResultSet rs = null;

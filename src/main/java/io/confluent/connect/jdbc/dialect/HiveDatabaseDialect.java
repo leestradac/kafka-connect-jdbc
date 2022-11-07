@@ -141,7 +141,7 @@ public class HiveDatabaseDialect extends GenericDatabaseDialect {
           Connection connection,
           TableId tableId
   ) throws SQLException {
-    log.info("-->tableExists start");
+    log.info("-->tableExists start hive");
     DatabaseMetaData metadata = connection.getMetaData();
     String[] tableTypes = tableTypes(metadata, this.tableTypes);
     String tableTypeDisplay = displayableTableTypes(tableTypes, "/");
@@ -150,7 +150,7 @@ public class HiveDatabaseDialect extends GenericDatabaseDialect {
     try (Statement statement = connection.createStatement()) {
       String query = "SHOW tables in `"
               + tableId.schemaName() + "` like '" + tableId.tableName() + "'";
-      log.info("-->tableExists query={}",query);
+      log.info("-->tableExists query={}",this, query);
       if (statement.execute(query)) {
         ResultSet rs = null;
         try {
@@ -158,17 +158,19 @@ public class HiveDatabaseDialect extends GenericDatabaseDialect {
           rs = statement.getResultSet();
           exists = rs.next();
         } finally {
+          //David
           if (rs != null) {
             rs.close();
           }
         }
       }
     }
-    log.info("-->tableExists exists={} end",exists);
+    log.info("-->tableExists exists={} end hive",exists);
+    exists = false;
     return exists;
   }
 
-  @Override
+  /*@Override
   public Map<ColumnId, ColumnDefinition> describeColumns(
           Connection connection,
           String tablePattern,
@@ -182,7 +184,7 @@ public class HiveDatabaseDialect extends GenericDatabaseDialect {
     log.info("-->describeColumns HIVE tablePattern={} catalogPattern={} schemaPattern={}",
             tablePattern, catalogPattern,schemaPattern);
     return describeColumns(connection, catalog , schema, tableId.tableName(), columnPattern);
-  }
+  }*/
 
   @Override
   public Map<ColumnId, ColumnDefinition> describeColumns(

@@ -610,7 +610,7 @@ public class GenericDatabaseDialect implements DatabaseDialect {
         tableId.tableName(),
         tableTypes
     )) {
-      final boolean exists = rs.next();
+      final boolean exists = false;//rs.next();
       glog.info(
           "Using {} dialect {} {} {}",
           this,
@@ -618,7 +618,8 @@ public class GenericDatabaseDialect implements DatabaseDialect {
           tableId,
           exists ? "present" : "absent"
       );
-      glog.info("-->tableExists end");
+      glog.info("-->tableExists end prueba generic");
+
       return exists;
     }
   }

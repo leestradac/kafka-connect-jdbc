@@ -149,8 +149,8 @@ public class HiveDatabaseDialect extends GenericDatabaseDialect {
     boolean exists = false;
     try (Statement statement = connection.createStatement()) {
       String query = "SHOW tables in `"
-              + tableId.schemaName() + "` like '" + tableId.tableName() + "'";
-      log.info("-->tableExists query={}",this, query);
+              + "delta" + "` like '" + tableId.tableName() + "'";
+      log.info("-->tableExists David query={}", query);
       if (statement.execute(query)) {
         ResultSet rs = null;
         try {
@@ -163,14 +163,18 @@ public class HiveDatabaseDialect extends GenericDatabaseDialect {
             rs.close();
           }
         }
+        /*catch (Exception e) {
+          log.info("-->David",e);
+        } */
       }
     }
+
     log.info("-->tableExists exists={} end hive",exists);
-    exists = false;
+    //exists = false;
     return exists;
   }
 
-  /*@Override
+  @Override
   public Map<ColumnId, ColumnDefinition> describeColumns(
           Connection connection,
           String tablePattern,
@@ -184,7 +188,7 @@ public class HiveDatabaseDialect extends GenericDatabaseDialect {
     log.info("-->describeColumns HIVE tablePattern={} catalogPattern={} schemaPattern={}",
             tablePattern, catalogPattern,schemaPattern);
     return describeColumns(connection, catalog , schema, tableId.tableName(), columnPattern);
-  }*/
+  }
 
   @Override
   public Map<ColumnId, ColumnDefinition> describeColumns(
@@ -203,6 +207,8 @@ public class HiveDatabaseDialect extends GenericDatabaseDialect {
     try (PreparedStatement stmt = connection.prepareStatement(queryStr)) {
       log.info("-->describeColumnsByQuerying HIVE PreparedStatement success");
       try (ResultSet rs = stmt.executeQuery()) {
+        //David
+        log.info("-->David HIVE",this,rs);
         TableId tableId = new TableId(null, schemaPattern, tablePattern);
         ResultSetMetaData rsmd = rs.getMetaData();
         results = describeColumns(rsmd, tableId);
@@ -360,11 +366,15 @@ public class HiveDatabaseDialect extends GenericDatabaseDialect {
     return builder.toString();
   }
 
+  /*
+  //DAVID MERGE
   @Override
   public String buildUpsertQueryStatement(
+          //David
           final TableId table,
           Collection<ColumnId> keyColumns,
-          Collection<ColumnId> nonKeyColumns
+          Collection<ColumnId> nonKeyColumns,
+          TableDefinition definition
   ) {
     log.info("-->buildUpsertQueryStatement HIVE");
     // https://db.apache.org/derby/docs/10.11/ref/rrefsqljmerge.html
@@ -418,8 +428,10 @@ public class HiveDatabaseDialect extends GenericDatabaseDialect {
     builder.append(")");
 
     log.info("-->buildUpsertQueryStatement HIVE DONE FINAL builder={}",builder);
+    //DAVID ERROR
     return builder.toString();
-  }
+
+  }*/
 
 
   @Override

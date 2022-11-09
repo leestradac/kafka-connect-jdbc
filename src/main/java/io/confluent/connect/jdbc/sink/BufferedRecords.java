@@ -21,11 +21,12 @@ import org.apache.kafka.connect.sink.SinkRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.sql.SQLException;
+//import java.sql.ResultSet;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
-import java.sql.SQLException;
-import java.sql.Statement;
-import java.sql.BatchUpdateException;
+
+
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -203,7 +204,8 @@ public class BufferedRecords {
     }
     log.info("-->BufferedRecords.flush() updateStatementBinder={}",
             updateStatementBinder.toString());
-    executeUpdatesNoBatch();
+    //executeUpdatesNoBatch();
+    executeUpdates();
     executeDeletes();
 
     final List<SinkRecord> flushedRecords = records;
@@ -217,16 +219,19 @@ public class BufferedRecords {
     log.info("-->BufferedRecords.executeUpdates start()");
     log.info("-->BufferedRecords.executeUpdates updatePreparedStatement={}",
             updatePreparedStatement.toString());
-
-    int[] batchStatus = updatePreparedStatement.executeBatch();
-    log.info("-->BufferedRecords.executeUpdates updatePreparedStatement.executeBatch() Completed");
-    for (int updateCount : batchStatus) {
-      if (updateCount == Statement.EXECUTE_FAILED) {
-        log.error("-->BufferedRecords.executeUpdates ERROR!!!");
-        throw new BatchUpdateException(
-                "Execution failed for part of the batch update", batchStatus);
-      }
+    //David
+    //int[] batchStatus = updatePreparedStatement.executeBatch();
+    try {
+      //ResultSet upStatus = updatePreparedStatement.executeQuery();
+      updatePreparedStatement.execute();
+      log.info(
+              "-->BufferedRecords.executeUpdates updatePreparedStatement.executeBatch() Completed");
+    } catch (Exception e) {
+      log.info("-->BufferedRecords.executeUpdatesPRUEBA Exception={}", e.toString());
     }
+    //David
+    //for (int updateCount : batchStatus) {
+
     log.info("-->BufferedRecords.executeUpdates done()");
   }
 
@@ -241,15 +246,29 @@ public class BufferedRecords {
   }
 
   private void executeDeletes() throws SQLException {
-    if (nonNull(deletePreparedStatement)) {
+    /*if (nonNull(deletePreparedStatement)) {
       int[] batchStatus = deletePreparedStatement.executeBatch();
       for (int updateCount : batchStatus) {
         if (updateCount == Statement.EXECUTE_FAILED) {
-          throw new BatchUpdateException(
-                  "Execution failed for part of the batch delete", batchStatus);
+          throw new Exception(
+                  "Execution failed for part of the batch delete");
         }
       }
+    }*/
+    log.info(
+            "-->BufferedRecords.deletePreparedStatementDELETEDAVID deletePreparedStatement={}",
+            deletePreparedStatement.toString());
+
+    try {
+      if (nonNull(deletePreparedStatement)) {
+        //ResultSet deleteStatus = deletePreparedStatement.executeQuery();
+        deletePreparedStatement.execute();
+      }
+    } catch (Exception e) {
+      log.info(
+              "-->BufferedRecords.deletePreparedStatementDELETEDAVID Exception={}", e.toString());
     }
+
   }
 
   public void close() throws SQLException {

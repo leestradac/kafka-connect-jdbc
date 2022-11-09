@@ -115,7 +115,8 @@ public class PreparedStatementBinder implements StatementBinder {
 
       }
     }
-    statement.addBatch();
+    //David
+    //statement.addBatch();
   }
 
   protected int bindKeyFields(SinkRecord record, int index) throws SQLException {

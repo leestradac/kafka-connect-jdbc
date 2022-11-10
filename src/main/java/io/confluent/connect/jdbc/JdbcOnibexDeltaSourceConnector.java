@@ -49,9 +49,9 @@ import io.confluent.connect.jdbc.util.Version;
  * JdbcConnector is a Kafka Connect Connector implementation that watches a JDBC database and
  * generates tasks to ingest database contents.
  */
-public class JdbcSourceConnector extends SourceConnector {
+public class JdbcOnibexDeltaSourceConnector extends SourceConnector {
 
-  private static final Logger log = LoggerFactory.getLogger(JdbcSourceConnector.class);
+  private static final Logger log = LoggerFactory.getLogger(JdbcOnibexDeltaSourceConnector.class);
 
   private static final long MAX_TIMEOUT = 10000L;
 

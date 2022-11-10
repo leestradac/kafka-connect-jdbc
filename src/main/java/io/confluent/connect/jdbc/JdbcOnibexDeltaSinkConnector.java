@@ -37,8 +37,8 @@ import io.confluent.connect.jdbc.sink.JdbcSinkConfig;
 import io.confluent.connect.jdbc.sink.JdbcSinkTask;
 import io.confluent.connect.jdbc.util.Version;
 
-public class JdbcSinkConnector extends SinkConnector {
-  private static final Logger log = LoggerFactory.getLogger(JdbcSinkConnector.class);
+public class JdbcOnibexDeltaSinkConnector extends SinkConnector {
+  private static final Logger log = LoggerFactory.getLogger(JdbcOnibexDeltaSinkConnector.class);
 
   private Map<String, String> configProps;
 

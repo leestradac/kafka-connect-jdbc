@@ -366,7 +366,7 @@ public class HiveDatabaseDialect extends GenericDatabaseDialect {
     return builder.toString();
   }
 
-  /*
+
   //DAVID MERGE
   @Override
   public String buildUpsertQueryStatement(
@@ -431,7 +431,7 @@ public class HiveDatabaseDialect extends GenericDatabaseDialect {
     //DAVID ERROR
     return builder.toString();
 
-  }*/
+  }
 
 
   @Override

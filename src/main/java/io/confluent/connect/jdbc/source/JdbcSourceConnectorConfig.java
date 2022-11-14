@@ -370,7 +370,6 @@ public class JdbcSourceConnectorConfig extends AbstractConfig {
   private static final EnumRecommender TRANSACTION_ISOLATION_MODE_RECOMMENDER =
           EnumRecommender.in(TransactionIsolationMode.values());
 
-  private static final String SqlServerDatabaseDialectName = "SqlServerDatabaseDialect";
 
   public static ConfigDef baseConfigDef() {
     ConfigDef config = new ConfigDef();
@@ -401,19 +400,7 @@ public class JdbcSourceConnectorConfig extends AbstractConfig {
       } else {
         dialect = DatabaseDialects.findBestFor(this.getString(CONNECTION_URL_CONFIG), this);
       }
-      if (!dialect.name().equals(
-              DatabaseDialects.create(
-                      SqlServerDatabaseDialectName, this
-              ).name()
-      )
-      ) {
-        configValues
-                .get(JdbcSourceConnectorConfig.TRANSACTION_ISOLATION_MODE_CONFIG)
-                .addErrorMessage("Isolation mode of `"
-                        + TransactionIsolationMode.SQL_SERVER_SNAPSHOT.name()
-                        + "` can only be configured with a Sql Server Dialect"
-          );
-      }
+
     }
 
     return config;

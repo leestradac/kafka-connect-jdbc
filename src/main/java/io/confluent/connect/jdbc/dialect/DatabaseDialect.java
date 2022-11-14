@@ -62,7 +62,7 @@ import org.apache.kafka.connect.sink.SinkRecord;
  * a custom dialect, implement the {@link DatabaseDialect} interface or extend an existing {@link
  * DatabaseDialect} implementation. A good approach is to subclass {@link GenericDatabaseDialect}
  * and override only the methods necessary to implement the custom behavior and to also delegate to
- * the parent class' method to handle the generic cases. The {@link PostgreSqlDatabaseDialect} is a
+
  * good example of how to do this.
  *
  * <h3>Mapping Types</h3> This JDBC Source connector creates a {@link Struct} object for each row
@@ -421,32 +421,7 @@ public interface DatabaseDialect extends ConnectionProvider {
     return buildUpdateStatement(table, keyColumns, nonKeyColumns);
   }
 
-  /**
-   * Build the UPSERT or MERGE prepared statement expression to either insert a new record into the
-   * given table or update an existing record in that table Variables for each key column should
-   * also appear in the WHERE clause of the statement.
-   *
-   * <p>This method is only called by the default implementation of
-   * {@link #buildUpsertQueryStatement(TableId, Collection, Collection, TableDefinition)}, since
-   * many dialects implement this variant of the method. However, overriding
-   * {@link #buildUpsertQueryStatement(TableId, Collection, Collection, TableDefinition)}
-   * is suggested.
-   *
-   * @param table         the identifier of the table; may not be null
-   * @param keyColumns    the identifiers of the columns in the primary/unique key; may not be null
-   *                      but may be empty
-   * @param nonKeyColumns the identifiers of the other columns in the table; may not be null but may
-   *                      be empty
-   * @return the upsert/merge statement; may not be null
-   * @throws UnsupportedOperationException if the dialect does not support upserts
-   * @deprecated use {@link #buildUpsertQueryStatement(TableId, Collection, Collection)}
-   */
-  @Deprecated
-  String buildUpsertQueryStatement(
-      TableId table,
-      Collection<ColumnId> keyColumns,
-      Collection<ColumnId> nonKeyColumns
-  );
+
 
   /**
    * Build the UPSERT or MERGE prepared statement expression to either insert a new record into the
@@ -454,9 +429,9 @@ public interface DatabaseDialect extends ConnectionProvider {
    * also appear in the WHERE clause of the statement.
    *
    * <p>By default this method calls
-   * {@link #buildUpsertQueryStatement(TableId, Collection, Collection)} to maintain backward
+
    * compatibility with older versions. Subclasses that override this method do not need to
-   * override {@link #buildUpsertQueryStatement(TableId, Collection, Collection)}.
+
    *
    * @param table         the identifier of the table; may not be null
    * @param keyColumns    the identifiers of the columns in the primary/unique key; may not be null
@@ -473,7 +448,58 @@ public interface DatabaseDialect extends ConnectionProvider {
       Collection<ColumnId> nonKeyColumns,
       TableDefinition definition
   ) {
-    return buildUpsertQueryStatement(table, keyColumns, nonKeyColumns);
+
+    // https://db.apache.org/derby/docs/10.11/ref/rrefsqljmerge.html
+    final ExpressionBuilder.Transform<ColumnId> transform = (builder, col) -> {
+      builder.append(table)
+              .append(".")
+              .appendColumnName(col.name())
+              .append("=DAT.")
+              .appendColumnName(col.name());
+    };
+
+    ExpressionBuilder builder = expressionBuilder();
+    builder.append("merge into ");
+    builder.append(table);
+    builder.append(" using (values(");
+    builder.appendList()
+            .delimitedBy(", ")
+            .transformedBy(ExpressionBuilder.placeholderInsteadOfColumnNames("?"))
+            .of(keyColumns, nonKeyColumns);
+    builder.append(") as DAT(");
+    builder.appendList()
+            .delimitedBy(", ")
+            .transformedBy(ExpressionBuilder.columnNames())
+            .of(keyColumns, nonKeyColumns);
+    builder.append(")) on ");
+    builder.appendList()
+            .delimitedBy(" and ")
+            .transformedBy(transform)
+            .of(keyColumns);
+
+
+
+    if (nonKeyColumns != null && !nonKeyColumns.isEmpty()) {
+
+      builder.appendList()
+              .delimitedBy(", ")
+              .transformedBy(transform)
+              .of(nonKeyColumns);
+    }
+
+
+
+    builder.append(" when not matched then insert(");
+    builder.appendList().delimitedBy(",").of(nonKeyColumns, keyColumns);
+    builder.append(") values(");
+    builder.appendList()
+            .delimitedBy(",")
+            .transformedBy(ExpressionBuilder.columnNamesWithPrefix("DAT."))
+            .of(nonKeyColumns, keyColumns);
+    builder.append(")");
+
+
+    return builder.toString();
   }
 
   /**

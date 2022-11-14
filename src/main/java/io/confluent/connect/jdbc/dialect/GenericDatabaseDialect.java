@@ -1669,15 +1669,7 @@ public class GenericDatabaseDialect implements DatabaseDialect {
     return builder.toString();
   }
 
-  @Override
-  @SuppressWarnings("deprecation")
-  public String buildUpsertQueryStatement(
-      TableId table,
-      Collection<ColumnId> keyColumns,
-      Collection<ColumnId> nonKeyColumns
-  ) {
-    throw new UnsupportedOperationException();
-  }
+
 
   @Override
   public final String buildDeleteStatement(
